@@ -46,13 +46,11 @@ class Entity {
   }
 
   load() {
-    this.textureRef = RayLib.LoadTexture(getAssetPath(this.sprite))
-
-    /*
-    if(this.x > 0) {
-      RayLib.ImageFlipVertical(this.textureRef)
+    this.textureRef = assetTable[this.sprite]
+    
+    if(this.textureRef === undefined) {
+      this.textureRef = assetTable[this.sprite] = RayLib.LoadTexture(getAssetPath(this.sprite))
     }
-    */
   }
 
   calcScale() {
@@ -89,22 +87,23 @@ const scaleScale = [0.01, 1, 2, 3]
 const screenWidth = 640
 const screenHeight = 480
 const screenCenter = { x: screenWidth / 2, y: screenHeight / 2 }
-const gameStates = {
+const GAME_STATES = {
   PLAYING: 0,
   PAUSED: 1,
-  GAMEOVER: 2
+  GAMEOVER: 2,
+  CLOSE_GAME: 3,
+  RESTART_GAME: 4
 }
 
-
-
 const soundTable = {}
+const assetTable = {}
 
 // STATES -------------------------------------------------------------------------
 
 let points = 0
 let lives = 3
 let entities = []
-let close = false
+let gameState = GAME_STATES.PLAYING
 
 // FUNCTIONS ----------------------------------------------------------------------
 
@@ -118,12 +117,10 @@ RayLib.InitWindow(screenWidth, screenHeight, "Spaghetti Shooter")
 RayLib.SetTargetFPS(60)
 RayLib.InitAudioDevice()
 
+// URGHHH?! Sound
 const timWave = RayLib.LoadWave(getAssetPath('placeholder.wav'))
-
 soundTable.tim = RayLib.LoadSoundFromWave(timWave)
 RayLib.PlaySound(soundTable.tim)
-
-
 
 new Entity({
   x: 0,
@@ -148,10 +145,11 @@ new Entity({
   },
 
   onCollide (collider) {
-    if(!collider.hasCollided && Math.abs(collider.x - this.x) < 40 && Math.abs(collider.y - this.y) < 40) {   
+    if(!collider.hasCollided && Math.abs(collider.x - this.x) < this.textureRef.width && Math.abs(collider.y - this.y) < this.textureRef.height) {   
       collider.hasCollided = true
-      if(lives === 1) {
-        close = true
+      if(lives <= 1) {
+        lives--
+        gameState = GAME_STATES.GAMEOVER
       } else {
         lives--
       }
@@ -176,7 +174,12 @@ const allenFactory = () => {
   })
 }
 
-while (!RayLib.WindowShouldClose() || !close) {
+while (gameState !== GAME_STATES.CLOSE_GAME) {
+    if(RayLib.WindowShouldClose()) {
+      gameState = GAME_STATES.CLOSE_GAME
+      continue
+    }
+
     const gameTime = RayLib.GetTime()
     const frameTime = RayLib.GetFrameTime()
 
@@ -184,28 +187,50 @@ while (!RayLib.WindowShouldClose() || !close) {
     RayLib.BeginDrawing()
     RayLib.ClearBackground(RayLib.BLACK)
 
-    // Randomize
-    RayLib.GetRandomValue(0, 160) === 160 ? allenFactory() : void(0)
+    switch(gameState) {
 
-    // Z ordering
-    entities = entities.sort((a, b) => { return a.z - b.z })
+      case GAME_STATES.PLAYING:
+        // Randomize
+        RayLib.GetRandomValue(0, 160) === 160 ? allenFactory() : void(0)
 
-    let lastEntity = null
+        // Z ordering
+        entities = entities.sort((a, b) => { return a.z - b.z })
 
-    // Iteration
-    for (let entityIndex = 0; entityIndex < entities.length; entityIndex++) {
-      const entity = entities[entityIndex];
-      entity.onUpdate(gameTime, frameTime)
+        let lastEntity = null
+        
+        // Iteration
+        for (let entityIndex = 0; entityIndex < entities.length; entityIndex++) {
+          const entity = entities[entityIndex];
+          entity.onUpdate(gameTime, frameTime)
 
-      if(lastEntity && (Math.abs(lastEntity.z) - 7) < 0.1 ) {
-        lastEntity.onCollide(entity)
-      }
+          if(lastEntity && (Math.abs(lastEntity.z) - 7) < 0.1 ) {
+            lastEntity.onCollide(entity)
+          }
+          
+          entity.render()
+          lastEntity = entity
+        }
+
+        RayLib.DrawText("Lives: " + lives, 0, 0, 20, RayLib.LIGHTGRAY)
+        break;
       
-      entity.render()
-      lastEntity = entity
+      case GAME_STATES.GAMEOVER:
+        RayLib.DrawText(`Game Over (${points})`, 0, 0, 20, RayLib.LIGHTGRAY)
+        RayLib.DrawText('Press SPACE to restart, Press ESC to exit', 0, 25, 20, RayLib.LIGHTGRAY)
+        
+        if(RayLib.IsKeyDown(RayLib.KEY_SPACE)) {
+          points = 0
+          lives = 3
+          entities = entities.filter(x => x.sprite === 'player.png')
+          gameState = GAME_STATES.PLAYING
+        }
+
+        if(RayLib.IsKeyDown(RayLib.KEY_ESCAPE)) {
+          gameState = GAME_STATES.CLOSE_GAME
+        }
+        break;
     }
 
-    RayLib.DrawText("Lives: " + lives, 0, 0, 20, RayLib.LIGHTGRAY)
 
     RayLib.EndDrawing()
 }
